@@ -325,13 +325,20 @@ class Cache:
             return await asyncio.shield(fut)
         fut = asyncio.get_running_loop().create_future()
         self._inflight[key] = fut
+        # Future ini boleh selesai tanpa ada yang menunggu (request tunggal).
+        # Tanpa callback ini, asyncio mencatat "Future exception was never
+        # retrieved" setiap kali producer gagal.
+        fut.add_done_callback(
+            lambda f: f.cancelled() or f.exception())
         try:
             value = await producer()
             self.put(key, value, ttl)
-            fut.set_result(value)
+            if not fut.done():
+                fut.set_result(value)
             return value
         except BaseException as e:
-            fut.set_exception(e)
+            if not fut.done():
+                fut.set_exception(e)
             raise
         finally:
             self._inflight.pop(key, None)
