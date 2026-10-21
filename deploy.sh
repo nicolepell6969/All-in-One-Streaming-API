@@ -125,6 +125,17 @@ else
             bad "tidak bisa restart $svc"; exit 1
         fi
     done
+    # Bot butuh ~15-20 detik menyambung ke Telegram sebelum web player
+    # membuka port 8200. Tunggu port benar-benar siap, bukan sekadar
+    # systemd bilang "active", supaya smoke test tidak dapat status 000.
+    printf '       menunggu port 8200'
+    for i in $(seq 1 40); do
+        if curl -s -m 2 -o /dev/null "http://127.0.0.1:8200/" 2>/dev/null; then
+            echo " — siap (${i}s)"; ok "web player menerima koneksi"; READY=1; break
+        fi
+        printf '.'; sleep 1
+    done
+    [ "${READY:-0}" = "1" ] || { echo; warn "port 8200 belum siap setelah 40s"; }
 fi
 
 # ---------- 4. Smoke test ----------
