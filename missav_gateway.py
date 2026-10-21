@@ -155,6 +155,14 @@ class GateMiddleware(BaseHTTPMiddleware):
     hits = 0
     blocked = 0
 
+    # --- penghitung pemakaian API (untuk dashboard) ---
+    started_at = time.time()
+    total = 0
+    stream_total = 0
+    by_endpoint: dict[str, int] = {}      # "GET /api/v1/search" -> jumlah
+    by_status: dict[str, int] = {}        # "200" / "404" -> jumlah
+    by_day: dict[str, int] = {}           # "2026-10-21" -> jumlah
+
     def __init__(self, app):
         super().__init__(app)
 
@@ -167,20 +175,27 @@ class GateMiddleware(BaseHTTPMiddleware):
             supplied = request.headers.get("x-api-key") or request.query_params.get("api_key")
             if supplied != S.api_key:
                 cls.blocked += 1
+                cls._count(request, 401, path)
                 return JSONResponse({"detail": "invalid or missing api key"}, status_code=401)
+        is_stream = path.startswith(_STREAM_PATHS)
         # Streaming tidak di-rate-limit: jumlah segmen ribuan per video.
-        if path.startswith(_STREAM_PATHS):
+        if is_stream:
             cls.hits += 1
-            return await call_next(request)
+            resp = await call_next(request)
+            cls._count(request, resp.status_code, path, stream=True)
+            return resp
         # GW_RATELIMIT=0 -> pembatasan dimatikan sepenuhnya.
         if S.ratelimit <= 0:
             cls.hits += 1
-            return await call_next(request)
+            resp = await call_next(request)
+            cls._count(request, resp.status_code, path)
+            return resp
         ip = request.client.host if request.client else "?"
         now = time.time()
         window = [t for t in cls.buckets.setdefault(ip, []) if now - t < 60]
         if len(window) >= S.ratelimit:
             cls.blocked += 1
+            cls._count(request, 429, path)
             return JSONResponse(
                 {"detail": "rate limited", "limit": S.ratelimit,
                  "retry_after": max(1, int(60 - (now - window[0])) if window else 1)},
@@ -192,7 +207,58 @@ class GateMiddleware(BaseHTTPMiddleware):
         if len(cls.buckets) > 5000:          # buang bucket IP yang sudah dingin
             for k in [k for k, v in cls.buckets.items() if not v or now - v[-1] > 120]:
                 cls.buckets.pop(k, None)
-        return await call_next(request)
+        resp = await call_next(request)
+        cls._count(request, resp.status_code, path)
+        return resp
+
+    # ------------------------------------------------------------------ #
+    @classmethod
+    def _count(cls, request: Request, status: int, path: str,
+               stream: bool = False) -> None:
+        """Catat satu panggilan API. Dipisah per endpoint & status."""
+        cls.total += 1
+        if stream:
+            cls.stream_total += 1
+        # Normalisasi path agar tidak meledak: id/kode diganti placeholder.
+        parts = []
+        for seg in path.strip("/").split("/"):
+            if not seg:
+                continue
+            # kode video, angka, hash -> :id
+            if re.fullmatch(r"[0-9]+", seg) or re.fullmatch(r"[a-z0-9]+-[a-z0-9-]+", seg) \
+                    or re.fullmatch(r"[0-9a-f]{8,}", seg):
+                parts.append(":id")
+            else:
+                parts.append(seg)
+        key = f"{request.method} /" + "/".join(parts)
+        cls.by_endpoint[key] = cls.by_endpoint.get(key, 0) + 1
+        s = str(status)
+        cls.by_status[s] = cls.by_status.get(s, 0) + 1
+        day = time.strftime("%Y-%m-%d", time.gmtime())
+        cls.by_day[day] = cls.by_day.get(day, 0) + 1
+        if len(cls.by_day) > 60:
+            for k in sorted(cls.by_day)[:-60]:
+                cls.by_day.pop(k, None)
+
+    @classmethod
+    def usage(cls) -> dict:
+        """Ringkasan pemakaian API untuk dashboard."""
+        now = time.time()
+        up = max(1, int(now - cls.started_at))
+        top = sorted(cls.by_endpoint.items(), key=lambda kv: -kv[1])[:25]
+        days = [{"date": d, "count": c} for d, c in sorted(cls.by_day.items())]
+        return {
+            "total": cls.total,
+            "stream_requests": cls.stream_total,
+            "api_requests": cls.total - cls.stream_total,
+            "blocked": cls.blocked,
+            "avg_per_minute": round(cls.total / up * 60, 2),
+            "uptime_seconds": up,
+            "since": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(cls.started_at)),
+            "by_status": dict(sorted(cls.by_status.items(), key=lambda kv: -kv[1])),
+            "top_endpoints": [{"endpoint": k, "count": v} for k, v in top],
+            "by_day": days,
+        }
 
 
 app.add_middleware(GateMiddleware)
@@ -689,6 +755,7 @@ async def root():
             "random": "/api/v1/random",
             "image": "/api/v1/image?u=",
             "stats": "/api/v1/stats",
+            "usage": "/api/v1/usage",
             "legacy": ["/resolve/{code}", "/search?q=", "/proxy/m3u8?u=",
                        "/proxy/segment?u=", "/download/{code}"],
         },
@@ -1120,18 +1187,30 @@ async def api_player(code: str, request: Request, lang: str = Query("en")):
     ))
 
 
-@app.get("/api/v1/stats", tags=["meta"], summary="Statistik cache & upstream")
+@app.get("/api/v1/stats", tags=["meta"], summary="Statistik cache, upstream & pemakaian API")
 async def api_stats():
     return {
         "uptime_seconds": int(time.time() - START),
         "cache": CACHE.stats(),
         "requests": {"served": GateMiddleware.hits, "blocked": GateMiddleware.blocked},
+        "usage": GateMiddleware.usage(),
         "upstream": {"flaresolverr_ok": UP._fs_ok, "flaresolverr_fail": UP._fs_fail,
                      "proxy_pool": len(UP._proxies), "proxy_good": len(UP._good)},
         "config": {"page_ttl": S.page_ttl, "stream_ttl": S.stream_ttl,
                    "index_ttl": S.index_ttl, "ratelimit": S.ratelimit,
                    "auth": bool(S.api_key)},
     }
+
+
+@app.get("/api/v1/usage", tags=["meta"],
+         summary="Jumlah panggilan API (per endpoint, status, dan hari)")
+async def api_usage():
+    """Penghitung panggilan API. Direset saat service restart.
+
+    `stream_requests` = segmen video (ribuan per video), dipisahkan agar
+    angka pemakaian API tidak membengkak.
+    """
+    return GateMiddleware.usage()
 
 
 # --------------------------------------------------------------------------- #
