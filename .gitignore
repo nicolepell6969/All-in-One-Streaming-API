@@ -1,0 +1,33 @@
+# ---- Rahasia & konfigurasi lokal ----
+.env
+.env.*
+!.env.example
+*.env
+secrets.json
+config.local.*
+player_url.txt
+
+# ---- Proxy pool (berisi IP:port milik pihak lain) ----
+proxies.txt
+surrit_*.txt
+
+# ---- Data runtime / cache ----
+cache/
+*.mp4
+*.part
+*.lock
+__pycache__/
+*.py[cod]
+*.log
+
+# ---- Backup & salinan kerja lokal ----
+*.bak*
+*_v1_backup.py
+# salinan kerja: sumber kanonik di repo adalah missav_bot.py
+missav_bot_v2.py
+
+# ---- Virtualenv & OS ----
+venv/
+.venv/
+.DS_Store
+Thumbs.db

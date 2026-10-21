@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>missav-gw — Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#121722; --panel2:#171d2b; --line:#232b3d;
+    --txt:#e7eaf0; --dim:#8b95a8; --accent:#4f7cff; --ok:#37d67a; --warn:#ffb020; --err:#ff5c5c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:14px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+  /* ---------- layout ---------- */
+  header{position:sticky;top:0;z-index:50;background:rgba(11,14,20,.92);
+         backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .hrow{max-width:1320px;margin:0 auto;padding:12px 18px;display:flex;align-items:center;gap:14px}
+  .logo{font-weight:700;font-size:16px;letter-spacing:.3px}
+  .logo span{color:var(--accent)}
+  .badge{font-size:11px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);
+         color:var(--dim);display:inline-flex;align-items:center;gap:6px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .dot.off{background:var(--err)}
+  nav{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+  nav button{background:transparent;border:1px solid transparent;color:var(--dim);
+             padding:7px 14px;border-radius:8px;cursor:pointer;font-size:13px}
+  nav button:hover{color:var(--txt);background:var(--panel2)}
+  nav button.active{color:#fff;background:var(--accent);border-color:var(--accent)}
+
+  main{max-width:1320px;margin:0 auto;padding:20px 18px 60px}
+  .view{display:none}
+  .view.active{display:block}
+  h2{font-size:15px;margin:0 0 14px;color:var(--dim);font-weight:600;
+     text-transform:uppercase;letter-spacing:.6px}
+
+  /* ---------- controls ---------- */
+  .bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:center}
+  input,select{background:var(--panel);border:1px solid var(--line);color:var(--txt);
+        padding:10px 13px;border-radius:9px;font-size:14px;outline:none;font-family:inherit}
+  input:focus,select:focus{border-color:var(--accent)}
+  input[type=text]{min-width:260px;flex:1;max-width:460px}
+  button.btn{background:var(--accent);color:#fff;border:none;padding:10px 18px;
+             border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;font-family:inherit}
+  button.btn:hover{filter:brightness(1.1)}
+  button.btn:disabled{opacity:.5;cursor:not-allowed}
+  button.ghost{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+  .chip{background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+        padding:6px 13px;border-radius:20px;cursor:pointer;font-size:12.5px}
+  .chip:hover{color:var(--txt);border-color:var(--accent)}
+  .chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  /* ---------- grid ---------- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+        overflow:hidden;cursor:pointer;transition:.15s;position:relative}
+  .card:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .card .thumb{position:relative;aspect-ratio:16/9;background:#000}
+  .card .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .card .dur{position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.82);
+             font-size:11px;padding:2px 7px;border-radius:5px;font-variant-numeric:tabular-nums}
+  .card .tagline{position:absolute;top:6px;left:6px;display:flex;gap:4px;flex-wrap:wrap}
+  .card .tl{font-size:10px;padding:2px 6px;border-radius:4px;font-weight:600}
+  .tl.en{background:#c0392b}.tl.cn{background:#b8342a}.tl.un{background:#2c5fa8}
+  .card .meta{padding:9px 11px 11px}
+  .card .code{font-size:11px;color:var(--accent);font-weight:700;letter-spacing:.4px}
+  .card .ttl{font-size:12.5px;color:var(--txt);margin-top:3px;line-height:1.4;
+             display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+  /* ---------- player ---------- */
+  .player-wrap{display:grid;grid-template-columns:1fr 330px;gap:20px}
+  @media(max-width:900px){.player-wrap{grid-template-columns:1fr}}
+  video{width:100%;background:#000;border-radius:11px;aspect-ratio:16/9;border:1px solid var(--line)}
+  .qbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .qbar button{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+               padding:7px 15px;border-radius:8px;cursor:pointer;font-size:13px}
+  .qbar button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .info{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px}
+  .info h3{font-size:14px;margin:0 0 12px;line-height:1.45;font-weight:600}
+  .kv{display:grid;grid-template-columns:88px 1fr;gap:6px 10px;font-size:12.5px;margin-bottom:14px}
+  .kv dt{color:var(--dim)}.kv dd{margin:0;word-break:break-word}
+  .pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .pill{background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+        padding:3px 9px;border-radius:14px;font-size:11.5px}
+
+  /* ---------- tester ---------- */
+  .ep{display:grid;grid-template-columns:66px 1fr auto;gap:10px;align-items:center;
+      background:var(--panel);border:1px solid var(--line);border-radius:9px;
+      padding:10px 13px;margin-bottom:8px}
+  .ep .m{font-size:10.5px;font-weight:700;color:var(--ok);letter-spacing:.5px}
+  .ep input{background:var(--panel2);border:1px solid var(--line);padding:7px 11px;
+            border-radius:7px;font-size:12.5px;width:100%;min-width:0;font-family:ui-monospace,monospace}
+  .ep button{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+             padding:7px 14px;border-radius:7px;cursor:pointer;font-size:12.5px}
+  .ep button:hover{border-color:var(--accent);color:var(--accent)}
+  pre{background:#080b11;border:1px solid var(--line);border-radius:9px;padding:14px;
+      overflow:auto;max-height:440px;font-size:12px;line-height:1.5;margin:0}
+  .res-hd{display:flex;gap:12px;align-items:center;margin:14px 0 8px;font-size:12.5px;color:var(--dim)}
+  .stat-ok{color:var(--ok);font-weight:700}.stat-err{color:var(--err);font-weight:700}
+
+  /* ---------- stats ---------- */
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:22px}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px}
+  .tile .n{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  .tile .l{font-size:11.5px;color:var(--dim);margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
+
+  .msg{padding:16px;background:var(--panel);border:1px solid var(--line);
+       border-radius:9px;color:var(--dim);text-align:center}
+  .msg.err{color:var(--err);border-color:#4a2020;background:#1a1010}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);
+        border-top-color:var(--accent);border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .pager{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:22px;color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hrow">
+    <div class="logo">missav<span>-gw</span></div>
+    <span class="badge"><span class="dot" id="hdot"></span><span id="htxt">cek…</span></span>
+    <span class="badge mono" id="latency">—</span>
+    <nav>
+      <button data-view="overview" class="active">Overview</button>
+      <button data-view="search">Search</button>
+      <button data-view="browse">Browse</button>
+      <button data-view="player">Player</button>
+      <button data-view="tester">API Tester</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ OVERVIEW ============ -->
+  <section class="view active" id="v-overview">
+    <h2>Status gateway</h2>
+    <div class="tiles" id="tiles"></div>
+
+    <h2>Endpoint tersedia</h2>
+    <div class="grid" id="eplist" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))"></div>
+
+    <h2 style="margin-top:26px">Pintasan</h2>
+    <div class="bar">
+      <a class="chip" href="/docs" target="_blank">Swagger UI</a>
+      <a class="chip" href="/redoc" target="_blank">ReDoc</a>
+      <a class="chip" href="/openapi.json" target="_blank">openapi.json</a>
+      <a class="chip" href="/api/v1/stats" target="_blank">/api/v1/stats</a>
+      <a class="chip" href="/health" target="_blank">/health</a>
+    </div>
+  </section>
+
+  <!-- ============ SEARCH ============ -->
+  <section class="view" id="v-search">
+    <h2>Pencarian</h2>
+    <div class="bar">
+      <input type="text" id="q" placeholder="kata kunci atau kode, mis. mfc-297 / heyzo">
+      <select id="qsort">
+        <option value="">Relevansi</option>
+        <option value="published_at">Recent update</option>
+        <option value="released_at">Release date</option>
+        <option value="today_views">Today views</option>
+        <option value="weekly_views">Weekly views</option>
+        <option value="monthly_views">Monthly views</option>
+        <option value="views">Total views</option>
+        <option value="saved">Saved</option>
+      </select>
+      <button class="btn" id="qgo">Cari</button>
+    </div>
+    <div id="qout"></div>
+    <div class="pager" id="qpage"></div>
+  </section>
+
+  <!-- ============ BROWSE ============ -->
+  <section class="view" id="v-browse">
+    <h2>Section</h2>
+    <div class="bar" id="sections"></div>
+    <div class="bar">
+      <select id="bsort">
+        <option value="">Default</option>
+        <option value="published_at">Recent update</option>
+        <option value="released_at">Release date</option>
+        <option value="today_views">Today views</option>
+        <option value="weekly_views">Weekly views</option>
+        <option value="monthly_views">Monthly views</option>
+        <option value="views">Total views</option>
+      </select>
+    </div>
+    <div id="bout"></div>
+    <div class="pager" id="bpage"></div>
+  </section>
+
+  <!-- ============ PLAYER ============ -->
+  <section class="view" id="v-player">
+    <h2>Preview &amp; player</h2>
+    <div class="bar">
+      <input type="text" id="pcode" placeholder="kode video, mis. heyzo-3960" value="heyzo-3960">
+      <button class="btn" id="pgo">Muat</button>
+    </div>
+    <div id="pout"><div class="msg">Masukkan kode video lalu klik Muat.</div></div>
+  </section>
+
+  <!-- ============ TESTER ============ -->
+  <section class="view" id="v-tester">
+    <h2>API Tester</h2>
+    <p style="color:var(--dim);font-size:13px;margin:0 0 16px">
+      Klik <b>Send</b> untuk memanggil endpoint. Path bisa diedit langsung.
+      Request pertama bisa lambat (~12 detik) karena FlareSolverr memuat halaman lewat browser.
+    </p>
+    <div id="eps"></div>
+    <div class="res-hd" id="reshd" style="display:none"></div>
+    <pre id="res" style="display:none"></pre>
+  </section>
+
+</main>
+
+<script>
+"use strict";
+const $  = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const API = "";                                    // same-origin
+
+/* ---------------- helpers ---------------- */
+function esc(s){ return String(s??"").replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function img(u){ return u ? `/api/v1/image?u=${encodeURIComponent(u)}` : ""; }
+
+async function jget(path, timeout=180000){
+  const ctl = new AbortController();
+  const to  = setTimeout(()=>ctl.abort(), timeout);
+  const t0  = performance.now();
+  try{
+    const r = await fetch(API+path, {signal:ctl.signal});
+    const ms = Math.round(performance.now()-t0);
+    const txt = await r.text();
+    let body; try{ body = JSON.parse(txt); }catch{ body = txt; }
+    return {ok:r.ok, status:r.status, ms, body};
+  } catch(e){
+    return {ok:false, status:0, ms:Math.round(performance.now()-t0),
+            body:{error:e.name==="AbortError"?"timeout":"network error: "+e.message}};
+  } finally { clearTimeout(to); }
+}
+
+function spinner(label="Memuat…"){
+  return `<div class="msg"><span class="spin"></span> ${esc(label)}</div>`;
+}
+function errBox(msg){
+  return `<div class="msg err">${esc(msg)}</div>`;
+}
+
+/* ---------------- health poll ---------------- */
+async function health(){
+  const t0 = performance.now();
+  const r  = await jget("/health", 10000);
+  const ms = Math.round(performance.now()-t0);
+  const d  = $("#hdot"), tx = $("#htxt"), lat = $("#latency");
+  if(r.ok && r.body.status === "ok"){
+    d.className = "dot on"; tx.textContent = "online"; lat.textContent = ms+" ms";
+  } else {
+    d.className = "dot off"; tx.textContent = "offline"; lat.textContent = "—";
+  }
+  return r;
+}
+
+/* ---------------- overview ---------------- */
+const ENDPOINTS = [
+  ["GET","/api/v1/search?q=mfc&page=1",              "Pencarian + sort + pagination"],
+  ["GET","/api/v1/video/heyzo-3960",                 "Detail + kualitas + related"],
+  ["GET","/api/v1/stream/heyzo-3960?quality=720p",    "Playlist HLS (URI via gateway)"],
+  ["GET","/api/v1/download/heyzo-3960?quality=720p",  "Remux MP4 (ffmpeg stream)"],
+  ["GET","/api/v1/player/heyzo-3960",                 "Halaman player hls.js"],
+  ["GET","/api/v1/browse/new?page=1",                 "Section: new/release/hot/studio"],
+  ["GET","/api/v1/sections",                          "Daftar section"],
+  ["GET","/api/v1/genres?page=1",                     "Index genre"],
+  ["GET","/api/v1/genres/Creampie?page=1",            "Video per genre"],
+  ["GET","/api/v1/makers?page=1",                     "Index maker/studio"],
+  ["GET","/api/v1/makers/S1?page=1",                  "Video per maker"],
+  ["GET","/api/v1/actresses?page=1&cup=F",            "Index aktris + filter"],
+  ["GET","/api/v1/actress/Yamauchi%20Yayoi",          "Video per aktris"],
+  ["GET","/api/v1/tags/Creampie?page=1",              "Video per tag"],
+  ["GET","/api/v1/related/heyzo-3960?limit=12",       "Video terkait"],
+  ["GET","/api/v1/random",                            "Video acak"],
+  ["GET","/api/v1/image?u=<fourhoi url>",             "Proxy cover"],
+  ["GET","/api/v1/stats",                             "Statistik cache & upstream"],
+  ["GET","/resolve/heyzo-3960",                       "[legacy] meta + streams"],
+  ["GET","/search?q=heyzo",                           "[legacy] pencarian"],
+  ["GET","/titles?codes=heyzo-3960",                  "[legacy] judul batch"],
+];
+
+async function loadOverview(){
+  const [h, s] = await Promise.all([health(), jget("/api/v1/stats")]);
+  const st = s.ok ? s.body : {};
+  const c  = st.cache || {}, u = st.upstream || {}, rq = st.requests || {};
+  const up = st.uptime_seconds || 0;
+  const fmtUp = up > 3600 ? (up/3600).toFixed(1)+" jam"
+              : up > 60   ? Math.floor(up/60)+" menit" : up+" detik";
+  $("#tiles").innerHTML = [
+    ["Uptime", fmtUp],
+    ["Cache entries", (c.mem_entries ?? 0) + " / " + (c.disk_files ?? 0) + " disk"],
+    ["Cache hit rate", c.hits+c.misses ? Math.round(c.hits/(c.hits+c.misses)*100)+"%" : "—"],
+    ["Request dilayani", rq.served ?? 0],
+    ["FlareSolverr", (u.flaresolverr_ok ?? 0) + " ok / " + (u.flaresolverr_fail ?? 0) + " gagal"],
+    ["Proxy pool", (u.proxy_good ?? 0) + " bagus / " + (u.proxy_pool ?? 0)],
+    ["Rate limit", (st.config?.ratelimit ?? "—") + " req/menit"],
+    ["Auth", st.config?.auth ? "aktif" : "nonaktif"],
+  ].map(([l,n]) => `<div class="tile"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join("");
+
+  $("#eplist").innerHTML = ENDPOINTS.map(([m,p,d]) => `
+    <div class="card" style="cursor:pointer" onclick="gotoTester('${esc(p)}')">
+      <div class="meta">
+        <div class="code mono">${esc(p)}</div>
+        <div class="ttl">${esc(d)}</div>
+      </div>
+    </div>`).join("");
+}
+
+/* ---------------- cards ---------------- */
+function cardHTML(it){
+  const tags = [];
+  if(it.has_english_subtitle) tags.push('<span class="tl en">EN</span>');
+  if(it.has_chinese_subtitle) tags.push('<span class="tl cn">CN</span>');
+  if(it.uncensored)           tags.push('<span class="tl un">UNC</span>');
+  return `<div class="card" onclick="openVideo('${esc(it.code)}')">
+    <div class="thumb">
+      <img loading="lazy" src="${img(it.thumb)}" alt="" onerror="this.style.opacity=.15">
+      <div class="tagline">${tags.join("")}</div>
+      ${it.duration_text ? `<span class="dur">${esc(it.duration_text)}</span>` : ""}
+    </div>
+    <div class="meta">
+      <div class="code">${esc(it.code)}</div>
+      <div class="ttl">${esc(it.title || "—")}</div>
+    </div>
+  </div>`;
+}
+
+function renderList(container, pageEl, data, page, onPage){
+  const box = $(container);
+  if(!data || !data.items || !data.items.length){
+    box.innerHTML = errBox("Tidak ada hasil.");
+    if(pageEl) $(pageEl).innerHTML = "";
+    return;
+  }
+  box.innerHTML = `<div class="grid">${data.items.map(cardHTML).join("")}</div>`;
+  if(pageEl){
+    const p = data.pagination || {};
+    const total = p.total_pages;
+    $(pageEl).innerHTML = `
+      <button class="chip" ${page<=1?"disabled style=opacity:.4":""} onclick="${onPage}(${page-1})">‹ Sebelumnya</button>
+      <span>Halaman ${page}${total?" / "+total:""} · ${data.count} item</span>
+      <button class="chip" ${total&&page>=total?"disabled style=opacity:.4":""} onclick="${onPage}(${page+1})">Berikutnya ›</button>`;
+  }
+}
+
+/* ---------------- search ---------------- */
+let qPage = 1, qTerm = "";
+async function doSearch(page=1){
+  const q = $("#q").value.trim();
+  if(!q){ $("#qout").innerHTML = errBox("Masukkan kata kunci."); return; }
+  qTerm = q; qPage = page;
+  $("#qgo").disabled = true;
+  $("#qout").innerHTML = spinner("Mencari “"+q+"”… (bisa ~12 detik pada request pertama)");
+  const sort = $("#qsort").value;
+  const r = await jget(`/api/v1/search?q=${encodeURIComponent(q)}&page=${page}` + (sort?`&sort=${sort}`:""));
+  $("#qgo").disabled = false;
+  if(!r.ok){ $("#qout").innerHTML = errBox("Gagal ("+r.status+"): "+JSON.stringify(r.body).slice(0,300)); return; }
+  renderList("#qout", "#qpage", r.body, page, "doSearch");
+}
+window.doSearch = doSearch;
+
+/* ---------------- browse ---------------- */
+let bPage = 1, bSection = "new";
+async function loadSections(){
+  const r = await jget("/api/v1/sections");
+  if(!r.ok) return;
+  $("#sections").innerHTML = r.body.sections.map(s =>
+    `<button class="chip${s.name===bSection?" active":""}" onclick="pickSection('${esc(s.name)}')">${esc(s.name)}</button>`
+  ).join("");
+}
+async function pickSection(name){
+  bSection = name; bPage = 1;
+  $$("#sections .chip").forEach(c => c.classList.toggle("active", c.textContent===name));
+  await doBrowse(1);
+}
+async function doBrowse(page=1){
+  bPage = page;
+  $("#bout").innerHTML = spinner("Memuat section "+bSection+"…");
+  const sort = $("#bsort").value;
+  const r = await jget(`/api/v1/browse/${encodeURIComponent(bSection)}?page=${page}` + (sort?`&sort=${sort}`:""));
+  if(!r.ok){ $("#bout").innerHTML = errBox("Gagal ("+r.status+"): "+JSON.stringify(r.body).slice(0,300)); return; }
+  renderList("#bout", "#bpage", r.body, page, "doBrowse");
+}
+window.pickSection = pickSection; window.doBrowse = doBrowse;
+
+/* ---------------- player / detail ---------------- */
+let hls = null;
+async function openVideo(code){
+  $$("nav button").forEach(b => b.classList.toggle("active", b.dataset.view==="player"));
+  $$(".view").forEach(v => v.classList.toggle("active", v.id==="v-player"));
+  $("#pcode").value = code;
+  await loadPlayer(code);
+}
+window.openVideo = openVideo;
+
+async function loadPlayer(code){
+  const out = $("#pout");
+  out.innerHTML = spinner("Mengambil detail "+code+"… (~12 detik pada request pertama)");
+  const r = await jget(`/api/v1/video/${encodeURIComponent(code)}?related=true`);
+  if(!r.ok){
+    out.innerHTML = errBox("Gagal memuat "+code+" ("+r.status+"): "+JSON.stringify(r.body).slice(0,300));
+    return;
+  }
+  const v = r.body;
+  const qs = v.qualities || [];
+  const best = qs.find(q => q !== "auto") || qs[0] || "auto";
+
+  const kv = [];
+  if(v.release_date) kv.push(["Rilis", v.release_date]);
+  if(v.duration_text) kv.push(["Durasi", v.duration_text]);
+  if(v.maker) kv.push(["Maker", v.maker]);
+  if(v.actresses?.length) kv.push(["Aktris", v.actresses.map(a=>a.name).join(", ")]);
+  kv.push(["Kualitas", qs.join(" · ") || "—"]);
+
+  const genres = (v.genres||[]).map(g=>`<span class="pill">${esc(g.name)}</span>`).join("");
+  const tags   = (v.tags||[]).slice(0,14).map(t=>`<span class="pill">${esc(t.name)}</span>`).join("");
+
+  out.innerHTML = `
+    <div class="player-wrap">
+      <div>
+        <video id="v" controls playsinline autoplay poster="${esc(img(v.image))}"></video>
+        <div class="qbar" id="qb">
+          ${qs.map(q=>`<button data-q="${esc(q)}" class="${q===best?"active":""}">${esc(q)}</button>`).join("")}
+        </div>
+        <div class="bar" style="margin-top:14px">
+          <a class="chip" href="/api/v1/download/${encodeURIComponent(code)}?quality=${encodeURIComponent(best)}" target="_blank">⬇ Download MP4 (${esc(best)})</a>
+          <a class="chip" href="/api/v1/stream/${encodeURIComponent(code)}?quality=${encodeURIComponent(best)}" target="_blank">Playlist m3u8</a>
+          <a class="chip" href="${esc(v.source)}" target="_blank">Sumber asli</a>
+        </div>
+        <div id="verr" style="color:var(--err);font-size:12.5px;margin-top:10px"></div>
+      </div>
+      <div class="info">
+        <h3>${esc(v.title || code)}</h3>
+        <dl class="kv">${kv.map(([k,x])=>`<dt>${esc(k)}</dt><dd>${esc(x)}</dd>`).join("")}</dl>
+        ${genres?`<div style="font-size:11.5px;color:var(--dim);margin-bottom:6px">GENRE</div><div class="pills">${genres}</div>`:""}
+        ${tags?`<div style="font-size:11.5px;color:var(--dim);margin:12px 0 6px">TAG</div><div class="pills">${tags}</div>`:""}
+      </div>
+    </div>
+    ${v.related?.length ? `<h2 style="margin-top:28px">Video terkait</h2>
+      <div class="grid">${v.related.slice(0,12).map(cardHTML).join("")}</div>` : ""}`;
+
+  $$("#qb button").forEach(b => b.onclick = () => {
+    $$("#qb button").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    playQuality(code, b.dataset.q);
+  });
+  playQuality(code, best);
+}
+
+/* Deteksi dukungan H.264/AAC. Firefox build tanpa codec proprietary
+   (mis. Camoufox) punya MediaSource tapi tidak bisa append avc1/mp4a —
+   hls.js akan melempar bufferAppendError yang membingungkan. */
+const H264_OK = (() => {
+  try {
+    if(!window.MediaSource) return false;
+    if(!MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E,mp4a.40.2")')) return false;
+    return true;
+  } catch(e){ return false; }
+})();
+
+const NATIVE_HLS = (() => {
+  const v = document.createElement('video');
+  return !!(v.canPlayType('application/vnd.apple.mpegurl'));
+})();
+
+function playQuality(code, q){
+  const v = $("#v");
+  if(!v) return;
+  const url = `/api/v1/stream/${encodeURIComponent(code)}?quality=${encodeURIComponent(q)}`;
+  const err = $("#verr"); if(err) err.textContent = "";
+
+  if(window.Hls && Hls.isSupported() && !H264_OK){
+    if(err){
+      err.innerHTML = "Browser ini tidak mendukung codec H.264/AAC (MSE), jadi video tidak bisa "
+        + "diputar di sini. Pakai Chrome/Edge/Safari, atau buka playlist di mpv/VLC:<br>"
+        + `<code>${esc(url)}</code>`;
+    }
+    return;
+  }
+
+  if(NATIVE_HLS){
+    v.src = url; v.play().catch(()=>{});
+    return;
+  }
+
+  if(window.Hls && Hls.isSupported()){
+    if(hls) hls.destroy();
+    hls = new Hls({maxBufferLength:30, manifestLoadingTimeOut:60000,
+                   manifestLoadingMaxRetry:4, fragLoadingTimeOut:60000});
+    hls.loadSource(url); hls.attachMedia(v);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => v.play().catch(()=>{}));
+    hls.on(Hls.Events.ERROR, (e,d) => {
+      if(d.fatal && err){
+        err.textContent = "Gagal memuat (" + d.details + "). Coba kualitas lain.";
+      }
+    });
+  } else {
+    v.src = url; v.play().catch(()=>{});
+  }
+}
+
+/* ---------------- tester ---------------- */
+function gotoTester(path){
+  $$("nav button").forEach(b => b.classList.toggle("active", b.dataset.view==="tester"));
+  $$(".view").forEach(v => v.classList.toggle("active", v.id==="v-tester"));
+  const inp = document.querySelector(`#eps input[value="${CSS.escape(path)}"]`);
+  if(inp){ inp.focus(); inp.scrollIntoView({block:"center",behavior:"smooth"}); send(inp); }
+}
+window.gotoTester = gotoTester;
+
+async function send(input){
+  const path = input.value.trim();
+  const hd = $("#reshd"), pre = $("#res");
+  hd.style.display = "flex"; pre.style.display = "block";
+  hd.innerHTML = `<span class="spin"></span> ${esc(path)}`;
+  pre.textContent = "";
+  const r = await jget(path);
+  const cls = r.ok ? "stat-ok" : "stat-err";
+  hd.innerHTML = `<span class="${cls}">${r.status || "ERR"}</span>
+                  <span>${r.ms} ms</span>
+                  <span class="mono" style="color:var(--dim)">${esc(path)}</span>`;
+  pre.textContent = typeof r.body === "string"
+    ? r.body.slice(0, 20000)
+    : JSON.stringify(r.body, null, 2).slice(0, 20000);
+}
+
+function buildTester(){
+  $("#eps").innerHTML = ENDPOINTS.map(([m,p,d]) => `
+    <div class="ep">
+      <span class="m">${m}</span>
+      <input type="text" value="${esc(p)}" spellcheck="false">
+      <button>Send</button>
+    </div>`).join("");
+  $$("#eps .ep").forEach(ep => {
+    const input = ep.querySelector("input");
+    ep.querySelector("button").onclick = () => send(input);
+    input.addEventListener("keydown", e => { if(e.key==="Enter") send(input); });
+  });
+}
+
+/* ---------------- nav ---------------- */
+$$("nav button").forEach(btn => btn.onclick = () => {
+  const view = btn.dataset.view;
+  $$("nav button").forEach(b => b.classList.toggle("active", b===btn));
+  $$(".view").forEach(v => v.classList.toggle("active", v.id==="v-"+view));
+  if(view==="overview") loadOverview();
+  if(view==="browse" && !$("#sections").children.length){ loadSections().then(()=>doBrowse(1)); }
+});
+
+$("#qgo").onclick = () => doSearch(1);
+$("#q").addEventListener("keydown", e => { if(e.key==="Enter") doSearch(1); });
+$("#pgo").onclick = () => {
+  const c = $("#pcode").value.trim();
+  if(c) loadPlayer(c);
+};
+$("#pcode").addEventListener("keydown", e => { if(e.key==="Enter") $("#pgo").click(); });
+$("#bsort").onchange = () => doBrowse(1);
+
+/* ---------------- boot ---------------- */
+buildTester();
+loadOverview();
+setInterval(health, 15000);
+</script>
+</body>
+</html>
