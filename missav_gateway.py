@@ -172,6 +172,10 @@ class GateMiddleware(BaseHTTPMiddleware):
         if path.startswith(_STREAM_PATHS):
             cls.hits += 1
             return await call_next(request)
+        # GW_RATELIMIT=0 -> pembatasan dimatikan sepenuhnya.
+        if S.ratelimit <= 0:
+            cls.hits += 1
+            return await call_next(request)
         ip = request.client.host if request.client else "?"
         now = time.time()
         window = [t for t in cls.buckets.setdefault(ip, []) if now - t < 60]
