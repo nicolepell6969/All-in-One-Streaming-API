@@ -937,9 +937,10 @@ async def player_handler(request: web.Request) -> web.Response:
             # Rate limit gateway ≠ video tidak ada. Beri pesan yang benar
             # agar pengguna tidak mengira videonya hilang.
             wait = r.headers.get("Retry-After")
+            unit = f"{wait} detik" if wait else "sekitar 1 menit"
             return await _error_page(
                 request, 429,
-                f"Gateway sedang sibuk. Coba lagi dalam {wait or '1 menit'}.",
+                f"Gateway sedang sibuk. Coba lagi dalam {unit}.",
                 "Terlalu banyak permintaan. Ini bukan berarti videonya tidak ada.")
         if r.status_code == 502:
             return await _error_page(
