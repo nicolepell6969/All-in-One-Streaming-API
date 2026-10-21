@@ -134,9 +134,15 @@ if [ "$DRY" = "1" ]; then
 else
     h=$(curl -s -m 30 -o /dev/null -w '%{http_code}' http://127.0.0.1:8100/health)
     [ "$h" = "200" ] && ok "gateway /health 200" || { bad "gateway /health $h"; exit 1; }
-    p=$(curl -s -m 60 -o /dev/null -w '%{http_code}' \
+    # Player bisa 10-20 detik saat cache dingin (resolve ke upstream).
+    # Status 000 = timeout curl, jadi beri waktu cukup sebelum menyimpulkan.
+    p=$(curl -s -m 120 -o /dev/null -w '%{http_code}' \
         "http://127.0.0.1:8200/p/heyzo-3960?q=360p")
-    [ "$p" = "200" ] && ok "player 200" || warn "player $p (mungkin butuh warm-up)"
+    case "$p" in
+        200) ok "player 200" ;;
+        000) warn "player timeout (cache dingin?) — cek manual" ;;
+        *)   warn "player $p" ;;
+    esac
     e=$(sudo -n journalctl -u missav-bot --since "-1min" --no-pager 2>/dev/null \
         | grep -cE 'ERROR|Traceback')
     [ "$e" = "0" ] && ok "log bot bersih" || warn "$e baris error di log"

@@ -261,6 +261,34 @@ Menjalankan tanpa systemd:
 ./venv/bin/python missav_bot.py         # bot + web player :8200
 ```
 
+## 8b. Alur deploy & update
+
+Setiap perubahan kode sebaiknya lewat `deploy.sh` — satu perintah yang
+menangani semuanya sekaligus, sehingga deploy server dan push GitHub tidak
+pernah tertinggal satu sama lain:
+
+```bash
+./deploy.sh "pesan commit yang jelas"
+```
+
+Yang dilakukan skrip ini secara berurutan:
+
+1. Menyalin `missav_bot_v2.py` (sumber kerja) → `missav_bot.py` (nama di repo)
+2. Validasi sintaks Python + JavaScript player, dan **scan rahasia**
+3. Restart service `missav-gw` dan `missav-bot`
+4. Smoke test `/health` dan halaman player, cek log bersih
+5. Commit dan push ke GitHub
+
+Kalau ada temuan rahasia atau sintaks error, proses **berhenti sebelum deploy**
+sehingga kode bermasalah tidak pernah sampai ke server maupun repo.
+
+Opsi lain:
+
+```bash
+./deploy.sh --dry-run "..."      # cek saja, tidak mengubah apa pun
+./deploy.sh --no-restart "..."   # push tanpa restart service
+```
+
 ## 9. Troubleshooting
 
 | Gejala | Penyebab / Solusi |
