@@ -933,10 +933,26 @@ async def player_handler(request: web.Request) -> web.Response:
     try:
         r = await _gw_get(f"{GW_BASE}/resolve/{code}",
                           params={"lang": BOT_LANG})
+        if r.status_code == 429:
+            # Rate limit gateway ≠ video tidak ada. Beri pesan yang benar
+            # agar pengguna tidak mengira videonya hilang.
+            wait = r.headers.get("Retry-After")
+            return await _error_page(
+                request, 429,
+                f"Gateway sedang sibuk. Coba lagi dalam {wait or '1 menit'}.",
+                "Terlalu banyak permintaan. Ini bukan berarti videonya tidak ada.")
+        if r.status_code == 502:
+            return await _error_page(
+                request, 502, "Gagal mengambil data video",
+                "Sumber sedang tidak bisa diakses. Coba lagi sebentar.")
         data = r.json()
-        if r.status_code != 200 or "streams" not in data:
+        if r.status_code == 404:
             return await _error_page(request, 404,
-                                     f"Video “{code}” tidak ditemukan")
+                                     f"Video “{code}” tidak ditemukan",
+                                     "Kode mungkin salah, atau video sudah dihapus.")
+        if r.status_code != 200 or "streams" not in data:
+            return await _error_page(request, r.status_code or 502,
+                                     "Data video tidak lengkap", "")
     except Exception as exc:
         log.warning("player %s: gateway error %s", code, exc)
         return await _error_page(request, 502, "Gateway tidak merespons")
@@ -1133,7 +1149,7 @@ async def gw_proxy_segment(request: web.Request) -> web.StreamResponse:
 
 
 async def _error_page(request: web.Request, status: int = 500,
-                       message: str = "") -> web.Response:
+                       message: str = "", hint: str = "") -> web.Response:
     """Halaman error yang ramah, bukan teks '500 Internal Server Error' mentah."""
     html = f"""<!DOCTYPE html><html lang="id"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1149,6 +1165,7 @@ async def _error_page(request: web.Request, status: int = 500,
  a{{color:#4f7cff}}
 </style></head><body><div class="w">
 <h1>⚠️ {html_escape.escape(message or "Gagal memuat halaman")}</h1>
+<p>{html_escape.escape(hint) if hint else ""}</p>
 <p>Kode HTTP <code>{status}</code>. Coba lagi beberapa saat, atau buka video
 langsung di missav.</p>
 <p><a href="javascript:location.reload()">Muat ulang</a></p>

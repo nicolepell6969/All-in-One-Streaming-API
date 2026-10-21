@@ -135,11 +135,21 @@ app.add_middleware(
 _PUBLIC_PATHS = ("/health", "/", "/docs", "/openapi.json", "/redoc",
                  "/dashboard", "/favicon.ico")
 
+# Path streaming: tidak dihitung ke rate limit (satu video = ~1.800 segmen).
+_STREAM_PATHS = ("/proxy/", "/api/v1/proxy/", "/api/v1/stream/",
+                 "/api/v1/download/", "/api/v1/image")
+
 
 class GateMiddleware(BaseHTTPMiddleware):
     """Rate limit + API key opsional. State disimpan di class-level supaya
     instance yang dibuat Starlette dan yang dipakai endpoint /stats adalah
-    objek yang sama (add_middleware membuat instance baru sendiri)."""
+    objek yang sama (add_middleware membuat instance baru sendiri).
+
+    PENTING: request segmen/stream TIDAK dihitung. Satu video punya ~1.800
+    segmen, jadi kalau dihitung, menonton satu video saja langsung menghabiskan
+    limit dan semua request lain (resolve, search) kena 429. Pemutaran punya
+    pembatas sendiri berupa bandwidth, bukan hitungan request.
+    """
 
     buckets: dict[str, list[float]] = {}
     hits = 0
@@ -158,12 +168,20 @@ class GateMiddleware(BaseHTTPMiddleware):
             if supplied != S.api_key:
                 cls.blocked += 1
                 return JSONResponse({"detail": "invalid or missing api key"}, status_code=401)
+        # Streaming tidak di-rate-limit: jumlah segmen ribuan per video.
+        if path.startswith(_STREAM_PATHS):
+            cls.hits += 1
+            return await call_next(request)
         ip = request.client.host if request.client else "?"
         now = time.time()
         window = [t for t in cls.buckets.setdefault(ip, []) if now - t < 60]
         if len(window) >= S.ratelimit:
             cls.blocked += 1
-            return JSONResponse({"detail": "rate limited", "limit": S.ratelimit}, status_code=429)
+            return JSONResponse(
+                {"detail": "rate limited", "limit": S.ratelimit,
+                 "retry_after": max(1, int(60 - (now - window[0])) if window else 1)},
+                status_code=429,
+                headers={"Retry-After": str(max(1, int(60 - (now - window[0])) if window else 1))})
         window.append(now)
         cls.buckets[ip] = window
         cls.hits += 1
@@ -565,8 +583,15 @@ async def detail_page(code: str, lang: str = "en") -> tuple[str, dict]:
             "Please check the URL in the address bar" in html
 
     def validate(html: str) -> bool:
-        return any(k in html for k in ('id="video-details"', 'property="og:video:duration"',
-                                       "<span>Code:</span>", "Not Found"))
+        ok = any(k in html for k in ('id="video-details"', 'property="og:video:duration"',
+                                     "<span>Code:</span>", "Not Found"))
+        if not ok:
+            return False
+        # Halaman HARUS memuat kode yang diminta. Proxy publik kadang
+        # mengembalikan halaman valid milik video LAIN; tanpa cek ini,
+        # detail video lain bisa ikut ter-cache di bawah kode yang diminta.
+        want = code.lower()
+        return want in html.lower()
 
     html = await UP.page(url, validate=validate)
     if is_404(html):
