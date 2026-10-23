@@ -519,9 +519,16 @@ async def run_search(msg: Message, q: str, page: int = 1,
     items = (data.get("items") or [])[:PAGE_SIZE]
     log.info("search %r hal %s -> %d item %dms", q, page, len(items), ms)
     if not items:
-        return await _emit(
-            msg, f"🔍 Tidak ada hasil untuk <b>{e(q)}</b>. Coba kata kunci lain.",
-            edit=edit)
+        # Gateway bisa balas 200 dengan daftar kosong kalau halaman yang
+        # terambil ternyata bukan hasil pencarian. Coba sekali lagi sebelum
+        # menyimpulkan memang tidak ada hasil.
+        retry = await gw_search(q, page)
+        items = ((retry or {}).get("items") or [])[:PAGE_SIZE]
+        log.info("search %r hal %s -> ulang: %d item", q, page, len(items))
+        if not items:
+            return await _emit(
+                msg, f"🔍 Tidak ada hasil untuk <b>{e(q)}</b>. Coba kata kunci lain.",
+                edit=edit)
 
     total = (data.get("pagination") or {}).get("total_pages")
     tok = _new_session("search", q, items, page, total_pages=total)

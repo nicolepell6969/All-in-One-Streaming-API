@@ -636,19 +636,37 @@ def rewrite_playlist(body: str, playlist_url: str, base: str,
 
 
 async def listing(url: str, ttl: Optional[int] = None) -> dict:
-    """Fetch + parse halaman listing (search/genre/actress/maker/section)."""
+    """Fetch + parse halaman listing (search/genre/actress/maker/section).
+
+    Validasi WAJIB memerlukan kartu (`class="thumbnail group"`). missav selalu
+    mengembalikan kartu — bahkan untuk kata kunci ngawur atau halaman melewati
+    batas — jadi halaman tanpa kartu pasti bukan hasil sah.
+
+    Sebelumnya validasi menerima teks "Not Found"/"No results" sebagai halaman
+    sah. Akibatnya halaman error proxy (yang hampir selalu memuat "Not Found")
+    lolos, ter-parse jadi 0 item, lalu ter-cache 15 menit sehingga pencarian di
+    bot tampak "tidak ada hasil" padahal videonya ada.
+    """
 
     def validate(html: str) -> bool:
-        return ('class="thumbnail group"' in html or "No results" in html
-                or "Not Found" in html)
+        return 'class="thumbnail group"' in html
 
-    async def produce():
+    async def produce() -> dict:
         html = await UP.page(url, validate=validate)
         data = P.parse_listing(html)
         data["source"] = url
+        if not data.get("items"):
+            # Tidak pernah di-cache: hasil kosong biasanya berarti halaman yang
+            # salah lolos, bukan pencarian yang benar-benar nihil.
+            raise HTTPException(502, "halaman listing tidak berisi hasil")
         return data
 
-    return await CACHE.get_or_set("listing:" + url, ttl or S.page_ttl, produce)
+    key = "listing:" + url
+    cached = CACHE.get(key)
+    if isinstance(cached, dict) and cached.get("items"):
+        return cached
+    data = await CACHE.get_or_set(key, ttl or S.page_ttl, produce)
+    return data if isinstance(data, dict) else {"count": 0, "items": [], "pagination": {}}
 
 
 async def detail_page(code: str, lang: str = "en") -> tuple[str, dict]:
